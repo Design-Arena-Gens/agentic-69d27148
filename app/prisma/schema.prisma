@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  QUEUED
+  CONTACTED
+  RESPONDED
+  INVALID
+  UNSUBSCRIBED
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum JobType {
+  INITIAL
+  FOLLOW_UP
+}
+
+model GmailAccount {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  googleUserId   String       @unique
+  refreshToken   String
+  accessToken    String?
+  tokenExpiry    DateTime?
+  label          String?
+  dailyLimit     Int          @default(450)
+  randomDelayMin Int          @default(30)
+  randomDelayMax Int          @default(120)
+  active         Boolean      @default(true)
+  lastRotatedAt  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  jobs OutreachJob[]
+}
+
+model Campaign {
+  id                 String        @id @default(uuid())
+  name               String
+  fromName           String
+  replyTo            String?
+  objective          String?
+  openingLineStyle   String?
+  active             Boolean       @default(true)
+  dailySendTarget    Int           @default(100)
+  followUpDelayDays  Int           @default(2)
+  followUpLimit      Int           @default(1)
+  sendWindowStartUtc DateTime?
+  sendWindowEndUtc   DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  leads   Lead[]
+  jobs    OutreachJob[]
+  prompts CampaignPrompt?
+  sheetImports SheetImport[]
+}
+
+model CampaignPrompt {
+  id                String   @id @default(uuid())
+  campaignId        String   @unique
+  emailStylePrompt  String
+  subjectStylePrompt String?
+  followUpPrompt    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+}
+
+model Lead {
+  id          String      @id @default(uuid())
+  email       String
+  name        String?
+  company     String?
+  niche       String?
+  website     String?
+  tags        String[]
+  note        String?
+  lastContact DateTime?
+  status      LeadStatus  @default(NEW)
+  importedVia String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  campaignId  String?
+
+  campaign Campaign?   @relation(fields: [campaignId], references: [id])
+  jobs     OutreachJob[]
+
+  @@unique([email, campaignId])
+}
+
+model OutreachJob {
+  id             String     @id @default(uuid())
+  campaignId     String
+  leadId         String
+  gmailAccountId String
+  type           JobType    @default(INITIAL)
+  status         JobStatus  @default(PENDING)
+  scheduledAt    DateTime
+  sentAt         DateTime?
+  error          String?
+  subject        String?
+  body           String?
+  aiContext      Json?
+  attempt        Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id])
+  lead     Lead        @relation(fields: [leadId], references: [id])
+  account  GmailAccount @relation(fields: [gmailAccountId], references: [id])
+  message  SentMessage?
+}
+
+model SentMessage {
+  id            String       @id @default(uuid())
+  outreachJobId String       @unique
+  gmailId       String
+  threadId      String?
+  subject       String
+  body          String
+  rawPayload    String?
+  createdAt     DateTime     @default(now())
+
+  job OutreachJob @relation(fields: [outreachJobId], references: [id])
+}
+
+model SheetImport {
+  id          String    @id @default(uuid())
+  spreadsheet String
+  worksheet   String?
+  importedAt  DateTime  @default(now())
+  rowCount    Int
+  campaignId  String?
+  createdAt   DateTime  @default(now())
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+}
